@@ -214,17 +214,32 @@
     }
   }
 
+  // Feed payloads carry a TRUNCATED preview of the body (Zhihu cuts long
+  // answers and sets content_need_truncated). They live under "preview:" so
+  // they can never be mistaken for the full answer fetched by the detail API.
   function stashFeedTargets(rows) {
     (rows || []).forEach(function (row) {
       var target = row && row.target;
       if (!target || !target.id) {
         return;
       }
-      if (target.type === 'answer' && target.content) {
-        cache.set('a:' + target.id, { at: Date.now(), data: target });
-      } else if (target.type === 'article' && target.content) {
-        cache.set('art:' + target.id, { at: Date.now(), data: target });
+      if ((target.type === 'answer' || target.type === 'article') && target.content) {
+        cache.set('preview:' + (target.type === 'answer' ? 'a:' : 'art:') + target.id, { at: Date.now(), data: target });
       }
+    });
+  }
+
+  function freshPreview(key) {
+    var entry = cache.get(key);
+    return entry && Date.now() - entry.at < CACHE_TTL ? entry.data : null;
+  }
+
+  function truncatedNotice(message, actions) {
+    return stateBlock({
+      icon: '!',
+      title: '这里只是节选，回答可能不完整',
+      detail: message,
+      actions: actions
     });
   }
 
@@ -511,6 +526,14 @@
     node.appendChild(body);
 
     var footer = el('<div class="answer-foot"></div>');
+    if (opts.isPreview) {
+      node.insertBefore(el('<p class="card-metrics answer-excerpt-tag">节选 · 内容可能已被知乎截断</p>'), body);
+      if (answer.id) {
+        footer.appendChild(el('<a class="btn" href="#/a/' + R.escapeHtml(String(answer.id)) + '">加载完整回答</a>'));
+      }
+      node.appendChild(footer);
+      return node;
+    }
     if (collapsed && answer.id) {
       var more = el('<a class="btn" href="#/a/' + R.escapeHtml(String(answer.id)) + '">阅读全文</a>');
       footer.appendChild(more);
@@ -665,17 +688,31 @@
       if (answers) appendAnswers(answers);
       var fromFeed = false;
       if (!list.childElementCount) {
+        // Nothing from the answer-list API. Fall back to previews of this
+        // question seen in the feed, clearly marked as excerpts.
         var previews = [];
         cache.forEach(function (entry, key) {
           var answer = entry.data;
-          if (key.indexOf('a:') === 0 && Date.now() - entry.at < CACHE_TTL &&
+          if (key.indexOf('preview:a:') === 0 && Date.now() - entry.at < CACHE_TTL &&
               answer && answer.question && String(answer.question.id) === id) previews.push(answer);
         });
         if (previews.length) {
-          offset = 0;
-          appendAnswers({ data: previews });
-          fromFeed = list.childElementCount > 0;
-          if (fromFeed) node.appendChild(el('<p class="card-meta">以下是推荐流已取得的回答，不是完整回答列表。</p>'));
+          previews.forEach(function (answer) {
+            list.appendChild(answerElement(answer, {
+              full: false,
+              isPreview: true,
+              openComments: false,
+              questionTitle: false
+            }));
+          });
+          fromFeed = true;
+          node.insertBefore(truncatedNotice('回答列表没有加载成功，下面显示的是推荐流里的节选，内容可能被知乎截断。', [
+            { label: '在应用内重试', primary: true, run: function () {
+              cache.delete('qa:' + id);
+              render();
+            } },
+            { label: '登录知乎账号', run: function () { signIn(); } }
+          ]), list);
         }
       }
 
@@ -753,9 +790,28 @@
     setCrumb('回答');
     setView(skeleton(4));
     return guard(async function (token) {
-      var answer = await cached('a:' + id, function () { return api.answer(id); });
+      // Always try the detail API first: a feed preview is never "the answer".
+      var answer = null;
+      var failure = null;
+      try {
+        answer = await cached('a:' + id, function () { return api.answer(id); });
+      } catch (error) {
+        failure = error;
+      }
       if (token !== requestToken) {
         return;
+      }
+      var isPreview = false;
+      if (!answer) {
+        answer = freshPreview('preview:a:' + id);
+        isPreview = !!answer;
+        if (!answer) {
+          setView(errorState(failure, function () {
+            cache.delete('a:' + id);
+            render();
+          }, 'https://www.zhihu.com/answer/' + encodeURIComponent(id)));
+          return;
+        }
       }
       var node = el('<div class="detail"></div>');
       var questionTitle = answer.question ? answer.question.title : '';
@@ -765,7 +821,27 @@
       } else {
         node.appendChild(el('<h2 class="detail-question">回答</h2>'));
       }
-      var answerNode = answerElement(answer, { full: true, questionTitle: false });
+      if (isPreview) {
+        var actions = [];
+        if (!api.session.signedIn || (failure && (failure.status === 401 || failure.status === 403 || failure.needLogin))) {
+          actions.push({ label: '登录知乎账号', primary: true, run: async function () {
+            await signIn();
+            if (api.session.signedIn) { cache.delete('a:' + id); render(); }
+          } });
+        } else {
+          actions.push({ label: '重新加载完整回答', primary: true, run: function () {
+            cache.delete('a:' + id);
+            render();
+          } });
+        }
+        actions.push({ label: '在内置浏览器中打开', run: function () {
+          host.openPage('https://www.zhihu.com/answer/' + encodeURIComponent(id)).catch(function () {});
+        } });
+        node.appendChild(truncatedNotice(
+          '完整回答没有加载成功' + (failure && failure.message ? '（' + failure.message + '）' : '') + '。下面显示的是推荐流里的节选，内容可能被知乎截断。',
+          actions));
+      }
+      var answerNode = answerElement(answer, { full: !isPreview, isPreview: false, questionTitle: false });
       node.appendChild(answerNode);
       var meta = el('<div class="detail-meta"></div>');
       if (answer.created_time) {
@@ -801,12 +877,40 @@
     setCrumb('文章');
     setView(skeleton(4));
     return guard(async function (token) {
-      var article = await cached('art:' + id, function () { return api.article(id); });
+      var article = null;
+      var failure = null;
+      try {
+        article = await cached('art:' + id, function () { return api.article(id); });
+      } catch (error) {
+        failure = error;
+      }
       if (token !== requestToken) {
         return;
       }
+      var isPreview = false;
+      if (!article) {
+        article = freshPreview('preview:art:' + id);
+        isPreview = !!article;
+        if (!article) {
+          setView(errorState(failure, function () {
+            cache.delete('art:' + id);
+            render();
+          }, 'https://zhuanlan.zhihu.com/p/' + encodeURIComponent(id)));
+          return;
+        }
+      }
       var node = el('<div class="detail"></div>');
       node.appendChild(el('<h2>' + R.escapeHtml(article.title || '文章') + '</h2>'));
+      if (isPreview) {
+        node.appendChild(truncatedNotice(
+          '完整文章没有加载成功。下面显示的是推荐流里的节选，内容可能被知乎截断。',
+          [{ label: '登录知乎账号', primary: true, run: async function () {
+            await signIn();
+            if (api.session.signedIn) { cache.delete('art:' + id); render(); }
+          } }, { label: '在内置浏览器中打开', run: function () {
+            host.openPage('https://zhuanlan.zhihu.com/p/' + encodeURIComponent(id)).catch(function () {});
+          } }]));
+      }
       var author = article.author || {};
       node.appendChild(el('<div class="detail-meta">' +
         (author.name ? '<span>' + R.escapeHtml(author.name) + '</span>' : '') +
