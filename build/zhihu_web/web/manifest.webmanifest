@@ -1,0 +1,19 @@
+{
+  "name": "zhihu_web",
+  "short_name": "zhihu_web",
+  "description": "轻量第三方知乎阅读器（WebView2 桌面端）",
+  "lang": "zh-CN",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#14151a",
+  "theme_color": "#0a63d6",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+# Runtime-generated WebView2 profiles and app state (never commit)
+**/data/
+**/WebView2/
+.testdata/
+.work/
+*.log
+metrics.jsonl
+diagnose.json
+
+# OS / editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Keep the distributable build output under build/zhihu_web/ so the repo can be
+# downloaded and run directly; only runtime state above is excluded.
