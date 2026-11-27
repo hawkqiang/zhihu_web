@@ -469,6 +469,7 @@
     if (!item) {
       return '';
     }
+    // 推荐流里的回答项，点击时直接进回答详情页（对应左边原网页的单个回答/帖子视角）
     if (item.kind === 'answer' && item.id) {
       return '#/a/' + item.id;
     }
