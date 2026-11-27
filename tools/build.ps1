@@ -114,6 +114,21 @@ foreach ($name in 'LICENSE', 'NOTICE.md', 'README.md') {
     if (Test-Path $file) { Copy-Item $file $out -Force }
 }
 
+# --- 5. Authenticode signing (self-signed dev certificate) ------------------
+# The private key (.pfx) is deliberately NOT committed to the public repo.
+# Signing uses the certificate already installed in the CurrentUser store.
+$signCert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -eq 'CN=zhihu_web Code Signing' } | Select-Object -First 1
+if ($signCert -and $signCert.HasPrivateKey) {
+    try {
+        $signResult = Set-AuthenticodeSignature -FilePath $exe -Certificate $signCert -HashAlgorithm SHA256
+        Write-Host ("signed: {0} - {1}" -f $signResult.Status, $signResult.StatusMessage) -ForegroundColor Cyan
+    } catch {
+        Write-Warning ("signing skipped: " + $_.Exception.Message)
+    }
+} else {
+    Write-Host "signing skipped: no code-signing certificate in Cert:\CurrentUser\My (run tools\trust-cert.bat or install your own cert)" -ForegroundColor DarkYellow
+}
+
 $totalMb = [math]::Round(((Get-ChildItem $out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 2)
 Write-Host ("done: {0}  ({1} MB)" -f $exe, $totalMb) -ForegroundColor Green
 

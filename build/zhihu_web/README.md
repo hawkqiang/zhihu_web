@@ -129,6 +129,25 @@ docs/                    design, limitations, measurements, troubleshooting
 - API responses may include third-party HTML; displayed content is sanitized
   but no sanitizer can protect against every future WebView/browser defect.
 
+## Code signing
+
+`zhihu_web.exe` is Authenticode-signed with a **self-signed** certificate in
+`certs/`. On the machine where the certificate is trusted, Windows shows
+“签名已通过验证”; on other machines Windows still warns about an unknown
+publisher. A publicly trusted signature requires a purchased code-signing
+certificate.
+
+- `tools\sign.bat` — re-sign the executable after a rebuild.
+- `tools\trust-cert.bat` — import `certs\zhihu_web-code-signing.cer` into the
+  current user's Trusted Root / Trusted Publisher stores (removes the warning
+  on that machine).
+- `certs\zhihu_web-code-signing.cer` — the public certificate only. The private
+  key (`*.pfx`) is **never committed**; signing uses the certificate installed
+  in the local `Cert:\CurrentUser\My` store.
+
+For a production release, install a purchased OV/EV code-signing certificate
+into `Cert:\CurrentUser\My` (or Point `tools\sign.bat` at your PFX) and rebuild.
+
 ## Licence
 
 GPL-3.0, see [LICENSE](LICENSE).
