@@ -395,11 +395,14 @@
     var type = target.type || '';
     var author = target.author || {};
     if (type === 'answer') {
+      var q = target.question || {};
+      var qId = q.id ? String(q.id) : '';
       return {
-        kind: 'answer',
-        id: String(target.id || ''),
-        questionId: target.question ? String(target.question.id || '') : '',
-        title: target.question && target.question.title ? target.question.title : (target.title || ''),
+        kind: qId ? 'question' : 'answer',
+        id: qId || String(target.id || ''),
+        answerId: qId ? String(target.id || '') : '',
+        questionId: qId,
+        title: q.title || target.title || '',
         excerpt: target.excerpt || target.content || '',
         image: target.thumbnail || target.image_url || extractFirstImage(target.content) || '',
         author: author.name || '',
@@ -469,15 +472,14 @@
     if (!item) {
       return '';
     }
-    // 推荐流里的回答项，点击时直接进回答详情页（对应左边原网页的单个回答/帖子视角）
+    if (item.kind === 'question' && item.id) {
+      return '#/q/' + item.id;
+    }
     if (item.kind === 'answer' && item.id) {
       return '#/a/' + item.id;
     }
     if (item.kind === 'article' && item.id) {
       return '#/art/' + item.id;
-    }
-    if (item.kind === 'question' && item.id) {
-      return '#/q/' + item.id;
     }
     return '';
   }
