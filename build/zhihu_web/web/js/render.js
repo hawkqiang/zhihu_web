@@ -364,11 +364,14 @@
       }
       var objectType = object.type || '';
       if (objectType === 'answer') {
+        var qObj = object.question || {};
+        var qIdStr = qObj.id ? String(qObj.id) : '';
         return {
-          kind: 'answer',
-          id: String(object.id || ''),
-          questionId: object.question ? String(object.question.id || '') : '',
-          title: object.question && object.question.name ? object.question.name : (object.title || ''),
+          kind: qIdStr ? 'question' : 'answer',
+          id: qIdStr || String(object.id || ''),
+          answerId: qIdStr ? String(object.id || '') : '',
+          questionId: qIdStr,
+          title: qObj.name || qObj.title || object.title || '',
           excerpt: object.excerpt || object.content || '',
           author: object.author ? object.author.name : '',
           votes: object.voteup_count || 0,
